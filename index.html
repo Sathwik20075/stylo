@@ -22,10 +22,10 @@
     <section id="view-today" class="view active" aria-labelledby="today-title">
       <h2 id="today-title">What are you dressing for?</h2>
       <div class="chips" role="radiogroup" aria-label="Occasion" id="occasion">
-        <button type="button" role="radio" aria-checked="true" data-value="casual">Casual</button>
-        <button type="button" role="radio" aria-checked="false" data-value="work">Work</button>
-        <button type="button" role="radio" aria-checked="false" data-value="party">Party</button>
-        <button type="button" role="radio" aria-checked="false" data-value="gym">Gym</button>
+        <button type="button" role="radio" aria-checked="true" data-value="casual">Everyday</button>
+        <button type="button" role="radio" aria-checked="false" data-value="college">College or outing</button>
+        <button type="button" role="radio" aria-checked="false" data-value="smart">Smart casual</button>
+        <button type="button" role="radio" aria-checked="false" data-value="formal">Formal</button>
       </div>
 
       <div class="weather">
@@ -47,6 +47,30 @@
       <div id="results" aria-live="polite"></div>
     </section>
 
+    <!-- Lookbook -->
+    <section id="view-lookbook" class="view" aria-labelledby="look-title">
+      <h2 id="look-title">Your lookbook</h2>
+      <p class="note">Every look uses only clothes you own. Ratings are out of 10 and are honest, so low scores are shown too.</p>
+
+      <details class="tool" id="try">
+        <summary>Rate a combination</summary>
+        <div class="try-grid">
+          <label>Top <select id="try-top"></select></label>
+          <label>Bottom <select id="try-bottom"></select></label>
+          <label>Shoes <select id="try-shoes"></select></label>
+          <label>Layer <select id="try-jacket"></select></label>
+        </div>
+        <button type="button" class="btn primary" id="try-go">Rate this look</button>
+        <div id="try-result"></div>
+      </details>
+
+      <div id="lookbook"></div>
+      <details class="tool" id="skip" hidden>
+        <summary>Combinations to skip</summary>
+        <div id="skip-list"></div>
+      </details>
+    </section>
+
     <!-- Wardrobe -->
     <section id="view-wardrobe" class="view" aria-labelledby="wardrobe-title">
       <div class="head-row">
@@ -55,21 +79,68 @@
       </div>
       <div class="chips" id="filters" aria-label="Filter by type">
         <button type="button" aria-pressed="true" data-value="all">All</button>
-        <button type="button" aria-pressed="false" data-value="top">Tops</button>
-        <button type="button" aria-pressed="false" data-value="bottom">Bottoms</button>
-        <button type="button" aria-pressed="false" data-value="layer">Layers</button>
+        <button type="button" aria-pressed="false" data-value="shirt">Shirts</button>
+        <button type="button" aria-pressed="false" data-value="tshirt">T-shirts and tops</button>
+        <button type="button" aria-pressed="false" data-value="pants">Pants</button>
+        <button type="button" aria-pressed="false" data-value="jeans">Jeans</button>
         <button type="button" aria-pressed="false" data-value="shoes">Shoes</button>
+        <button type="button" aria-pressed="false" data-value="jacket">Layers</button>
+        <button type="button" aria-pressed="false" data-value="accessory">Accessories</button>
       </div>
       <div id="grid" class="grid"></div>
       <p id="empty" class="empty stitch" hidden>
         No clothes here yet. Add a photo of a shirt, trousers or shoes to get started.
       </p>
     </section>
+
+    <!-- Profile -->
+    <section id="view-profile" class="view" aria-labelledby="profile-title">
+      <h2 id="profile-title">Profile and backup</h2>
+
+      <div class="card">
+        <h3>Skin tone</h3>
+        <p class="note">Stylo does not read your photos. Choose what matches you best, ideally judged in daylight. It only nudges the colour advice, and lighting can mislead, so treat it as a guide.</p>
+        <div class="fields">
+          <label>Skin depth
+            <select id="p-depth">
+              <option value="">Skip this</option>
+              <option value="fair">Fair</option>
+              <option value="light">Light</option>
+              <option value="medium">Medium</option>
+              <option value="tan">Tan</option>
+              <option value="deep">Deep</option>
+            </select>
+          </label>
+          <label>Undertone
+            <select id="p-undertone">
+              <option value="">Skip this</option>
+              <option value="warm">Warm (golden, peachy)</option>
+              <option value="cool">Cool (pink, bluish)</option>
+              <option value="neutral">Neutral (a mix)</option>
+              <option value="unsure">Not sure</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Your data</h3>
+        <p class="note">Photos and wardrobe stay on this device. Save a backup file before you switch devices or clear your browser data.</p>
+        <div class="stack">
+          <button type="button" class="btn ghost" id="export">Download backup</button>
+          <button type="button" class="btn ghost" id="import">Restore from backup</button>
+          <button type="button" class="btn ghost" id="csv">Download inventory (CSV)</button>
+        </div>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+    </section>
   </main>
 
   <nav class="tabs" aria-label="Main">
     <button type="button" data-view="today" aria-current="page">Today</button>
+    <button type="button" data-view="lookbook">Lookbook</button>
     <button type="button" data-view="wardrobe">Wardrobe</button>
+    <button type="button" data-view="profile">Profile</button>
   </nav>
 
   <dialog id="dlg" aria-labelledby="dlg-title">
@@ -80,22 +151,25 @@
         <img id="preview" alt="" hidden>
         <span id="photo-hint">Take or choose a photo</span>
       </label>
-      <input type="file" id="photo" accept="image/*" required>
+      <input type="file" id="photo" accept="image/*">
 
       <div class="fields">
-        <label>Type
-          <select id="cat">
-            <option value="top">Top</option>
-            <option value="bottom">Bottom</option>
-            <option value="layer">Layer (jacket, sweater)</option>
-            <option value="shoes">Shoes</option>
+        <label>Type <select id="type"></select></label>
+        <label>Kind <select id="kind"></select></label>
+        <label>Pattern
+          <select id="pattern">
+            <option value="solid">Solid</option>
+            <option value="striped">Striped</option>
+            <option value="checked">Checked</option>
+            <option value="printed">Printed</option>
           </select>
         </label>
         <label>Style
           <select id="style">
+            <option value="street">Relaxed</option>
             <option value="casual">Casual</option>
-            <option value="smart">Smart</option>
-            <option value="sport">Sport</option>
+            <option value="smart">Smart casual</option>
+            <option value="formal">Formal</option>
           </select>
         </label>
         <label>Warmth
@@ -108,8 +182,11 @@
         <label>Colour
           <span class="colour-row">
             <input type="color" id="colour" value="#808080">
-            <small>Picked from your photo. Change it if it looks off.</small>
+            <span><strong id="colour-name">Grey</strong><br><small>Picked from your photo. Change it if it looks off.</small></span>
           </span>
+        </label>
+        <label>Note (optional)
+          <input type="text" id="note" maxlength="60" placeholder="For example, white linen shirt">
         </label>
       </div>
 
@@ -122,6 +199,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
+  <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

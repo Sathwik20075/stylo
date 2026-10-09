@@ -1,7 +1,7 @@
 // Network first, so updates show up as soon as you push them. Falls back to cache when offline.
-const CACHE = 'stylo-v1';
+const CACHE = 'stylo-v2';
 const ASSETS = [
-  './', './index.html', './style.css', './app.js',
+  './', './index.html', './style.css', './engine.js', './app.js',
   './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png'
 ];
 

@@ -68,12 +68,31 @@ To build installers locally run `npm run dist`; the files appear in `dist/`.
 
 ---
 
-## What it does today
-- Add clothes with a photo, type, style, warmth and colour (colour is picked from the photo)
-- Suggests 3 outfits using occasion, weather, colour matching and what you wore recently
-- "Wear this today" saves your choice so later suggestions vary
+## What it does today (version 0.2)
+
+- **Wardrobe with IDs:** every item gets a permanent ID (SH01 shirt, TS01 T-shirt or polo, PT01 pants or cargos,
+  JN01 jeans, SHOE01 shoes, JK01 jacket or hoodie, AC01 accessory). IDs are never reused, even after you remove an item.
+  Each item records type, kind, colour (picked from the photo, with a colour name), pattern, style and warmth.
+- **Lookbook:** the best outfit for every top and bottom pairing, using only clothes you own. Each look shows its
+  outfit ID, a rating out of 10, the colours, why it works, cautions, and what changes if you swap the shoes or layer.
+  Collections: Everyday casual, College and outings, Smart casual, Formal wear, Minimalist, Streetwear,
+  Best colour combinations, Underrated combinations. Empty collections are hidden.
+- **Honest ratings:** weak pairings get low scores and appear under "Combinations to skip" with a better option.
+  "Rate a combination" scores any top, bottom, shoes and layer you pick.
+- **Today:** three outfits for the occasion and the weather, avoiding what you wore in the last few days.
+- **Save as image:** each look can be saved as a picture board of your real item photos with IDs and rating.
+- **Profile:** optional skin depth and undertone nudge the colour advice. You choose them yourself, because Stylo
+  does not analyse photos of your face.
+- **Backup:** download or restore a backup file, and download the wardrobe inventory as a CSV.
+
+## Not included (needs a server)
+
+- AI-generated pictures of you wearing the outfits, and analysis of face or body photos. These need an image
+  model behind a small server so the API key stays private. The picture boards use your real item photos instead,
+  so colours and patterns are never altered.
 
 ## Known limits
 - "Use my location" may not work in the desktop app. Pick the weather from the list instead.
-- Wardrobe data lives in one app or browser only. The desktop app and the web app do not share data.
-- Auto-tagging photos with AI is not included yet.
+- Wardrobe data lives in one app or browser only. The desktop app and the web app do not share data, but you can
+  move it between them with a backup file.
+- Ratings come from colour and style rules, so they are a well-reasoned guide, not a verdict.

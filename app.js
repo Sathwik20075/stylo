@@ -1,20 +1,23 @@
 'use strict';
 
+const E = window.StyloEngine;
+const { TYPES, STYLE_LABEL } = E;
+
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-
-const CATS = { top: 'Top', bottom: 'Bottom', layer: 'Layer', shoes: 'Shoes' };
-const WARMTH = { light: 1, medium: 2, warm: 3 };
-const OCCASION_STYLE = { casual: 'casual', work: 'smart', party: 'smart', gym: 'sport' };
 
 const state = {
   items: [],
   worn: [],
+  profile: { id: 'profile', depth: '', undertone: '' },
+  counters: { id: 'counters' },
   occasion: 'casual',
   temp: 20,
   rain: null,
   filter: 'all',
-  draft: null,
+  draftPhoto: null,
+  editingId: null,
+  expanded: {},
 };
 
 /* ---------- small helpers ---------- */
@@ -35,21 +38,25 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
 }
 
 const newId = () =>
   (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
+
+const lower = (s) => (s || '').toLowerCase();
+const itemLabel = (i) => `${E.colourName(i.colour)} ${lower(i.kind)}`;
 
 /* ---------- storage (IndexedDB, stays on the user's device) ---------- */
 
 let db;
 function openDB() {
   return new Promise((resolve, reject) => {
-    const r = indexedDB.open('stylo', 1);
+    const r = indexedDB.open('stylo', 2);
     r.onupgradeneeded = () => {
-      r.result.createObjectStore('items', { keyPath: 'id' });
-      r.result.createObjectStore('worn', { keyPath: 'id' });
+      for (const name of ['items', 'worn', 'meta']) {
+        if (!r.result.objectStoreNames.contains(name)) r.result.createObjectStore(name, { keyPath: 'id' });
+      }
     };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
@@ -58,10 +65,39 @@ function openDB() {
 const store = (name, mode = 'readonly') => db.transaction(name, mode).objectStore(name);
 const wrap = (r) => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 const getAll = (name) => wrap(store(name).getAll());
+const getOne = (name, id) => wrap(store(name).get(id));
 const put = (name, v) => wrap(store(name, 'readwrite').put(v));
 const remove = (name, id) => wrap(store(name, 'readwrite').delete(id));
 
-/* ---------- photo + colour ---------- */
+// IDs like SH01 are never reused, even after an item is removed.
+async function nextCode(type) {
+  const prefix = TYPES[type].code;
+  state.counters[prefix] = (state.counters[prefix] || 0) + 1;
+  await put('meta', state.counters);
+  return prefix + String(state.counters[prefix]).padStart(2, '0');
+}
+
+// Brings items saved by version 0.1 up to the new format.
+async function migrate() {
+  const legacy = {
+    top: ['tshirt', 'T-shirt'],
+    bottom: ['pants', 'Other pants'],
+    layer: ['jacket', 'Other layer'],
+    shoes: ['shoes', 'Other shoes'],
+  };
+  const ordered = [...state.items].sort((a, b) => (a.added || 0) - (b.added || 0));
+  for (const it of ordered) {
+    let changed = false;
+    if (!it.type) { const [t, k] = legacy[it.cat] || ['tshirt', 'Other top']; it.type = t; it.kind = k; changed = true; }
+    if (!it.kind) { it.kind = Object.keys(TYPES[it.type].kinds)[0]; changed = true; }
+    if (!it.pattern) { it.pattern = 'solid'; changed = true; }
+    if (!E.FORMALITY[it.style]) { it.style = 'casual'; changed = true; }
+    if (!it.code) { it.code = await nextCode(it.type); changed = true; }
+    if (changed) await put('items', it);
+  }
+}
+
+/* ---------- photo and colour ---------- */
 
 function loadImage(file) {
   return new Promise((resolve, reject) => {
@@ -105,39 +141,49 @@ function dominantColour(canvas) {
   return toHex(best.r / best.n, best.g / best.n, best.b / best.n);
 }
 
-function hsl(hex) {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  const d = max - min;
-  let hue = 0, s = 0;
-  if (d) {
-    s = d / (1 - Math.abs(2 * l - 1));
-    if (max === r) hue = ((g - b) / d) % 6;
-    else if (max === g) hue = (b - r) / d + 2;
-    else hue = (r - g) / d + 4;
-    hue = (hue * 60 + 360) % 360;
+/* ---------- look cards (used on Today and Lookbook) ---------- */
+
+function lookCard(look, opts = {}) {
+  const pieces = h('div', { class: 'pieces' });
+  for (const it of look.items) {
+    pieces.append(h('figure', {}, h('img', { src: it.photo, alt: it.code }), h('figcaption', {}, `${it.code} · ${E.colourName(it.colour)}`)));
   }
-  return { h: hue, s, l };
+  const names = [...new Set(look.items.map((i) => E.colourName(i.colour)))];
+  const card = h('article', { class: 'outfit stitch' },
+    h('div', { class: 'look-head' },
+      h('h3', {}, look.id),
+      h('p', { class: 'rating' }, `${look.r.total.toFixed(1)}/10`, h('span', {}, E.verdict(look.r.total)))),
+    h('p', { class: 'colours' }, `Colours: ${names.join(', ')}`));
+
+  if (opts.note) card.append(h('p', { class: 'weather-line' }, opts.note));
+  card.append(pieces);
+  if (look.r.why.length) card.append(h('ul', { class: 'reasons' }, ...look.r.why.slice(0, 4).map((t) => h('li', {}, t))));
+  if (look.r.cautions.length) card.append(h('ul', { class: 'reasons bad' }, ...look.r.cautions.slice(0, 3).map((t) => h('li', {}, t))));
+  if (look.alt) card.append(h('p', { class: 'alt' }, look.alt.text));
+
+  const row = h('div', { class: 'button-row' });
+  if (opts.wear) {
+    const wear = h('button', { class: 'btn primary', type: 'button' }, 'Wear this today');
+    wear.addEventListener('click', async () => {
+      const d = new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const entry = { id: newId(), date, ids: look.items.map((x) => x.id) };
+      await put('worn', entry);
+      state.worn.push(entry);
+      wear.textContent = 'Saved for today';
+      wear.disabled = true;
+      toast("Saved. Stylo will vary tomorrow's picks.");
+    });
+    row.append(wear);
+  }
+  const save = h('button', { class: 'btn ghost', type: 'button' }, 'Save as image');
+  save.addEventListener('click', () => saveBoard(look));
+  row.append(save);
+  card.append(row);
+  return card;
 }
 
-/* ---------- outfit logic ---------- */
-
-const isNeutral = (c) => c.s < 0.18 || c.l < 0.15 || c.l > 0.88;
-const hueGap = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
-
-// Higher is a better match. Neutrals go with everything.
-function colourMatch(hexA, hexB) {
-  const a = hsl(hexA), b = hsl(hexB);
-  if (isNeutral(a) || isNeutral(b)) return 1;
-  const gap = hueGap(a.h, b.h);
-  if (gap < 35) return 0.8;      // same colour family
-  if (gap > 150) return 0.7;     // opposites
-  if (a.s < 0.35 || b.s < 0.35) return 0.2; // muted colours clash less
-  return -0.8;
-}
+/* ---------- Today ---------- */
 
 function daysSinceWorn() {
   const map = new Map();
@@ -149,143 +195,385 @@ function daysSinceWorn() {
   return map;
 }
 
-function scoreOutfit(o, ctx) {
-  const { top, bottom, layer, shoes } = o;
-  const parts = [top, bottom, layer, shoes].filter(Boolean);
-  let s = 0;
-
-  for (const p of parts) {
-    if (p.style === ctx.style) s += 1;
-    else if (ctx.occasion === 'gym' || p.style === 'sport') s -= 2;
-    else s -= 0.5;
-  }
-
-  const warmth = (WARMTH[top.warmth] + WARMTH[bottom.warmth]) / 2 + (layer ? WARMTH[layer.warmth] * 0.5 : 0);
-  s -= Math.abs(warmth - ctx.target) * 1.5;
-
-  s += colourMatch(top.colour, bottom.colour) * 1.5;
-  if (layer) s += colourMatch(layer.colour, top.colour) + colourMatch(layer.colour, bottom.colour);
-  if (shoes) s += colourMatch(shoes.colour, bottom.colour);
-
-  for (const p of parts) {
-    const d = ctx.recent.get(p.id);
-    if (d !== undefined && d <= 1) s -= 2;
-    else if (d !== undefined && d <= 3) s -= 0.8;
-  }
-  return s + Math.random() * 0.6;
-}
-
-function suggest() {
-  const by = (c) => state.items.filter((i) => i.cat === c);
-  const tops = by('top'), bottoms = by('bottom'), layers = by('layer'), shoes = by('shoes');
-  if (!tops.length || !bottoms.length) return null;
-
-  const t = state.temp;
-  const ctx = {
-    occasion: state.occasion,
-    style: OCCASION_STYLE[state.occasion],
-    target: t >= 30 ? 1 : t >= 24 ? 1.5 : t >= 18 ? 2 : t >= 12 ? 2.5 : 3,
-    recent: daysSinceWorn(),
-  };
-  const layerOptions = t < 20 && layers.length ? layers : [null];
-  const shoeOptions = shoes.length ? shoes : [null];
-
-  const all = [];
-  for (const top of tops)
-    for (const bottom of bottoms)
-      for (const layer of layerOptions)
-        for (const shoe of shoeOptions) {
-          const o = { top, bottom, layer, shoes: shoe };
-          all.push({ ...o, score: scoreOutfit(o, ctx) });
-        }
-  all.sort((a, b) => b.score - a.score);
-
-  // Prefer three outfits that don't reuse the same top or bottom.
-  const picked = [];
-  for (const o of all) {
-    if (picked.length === 3) break;
-    if (picked.every((p) => p.top.id !== o.top.id && p.bottom.id !== o.bottom.id)) picked.push(o);
-  }
-  for (const o of all) {
-    if (picked.length === 3) break;
-    const key = (x) => [x.top.id, x.bottom.id, x.layer?.id, x.shoes?.id].join('|');
-    if (!picked.some((p) => key(p) === key(o))) picked.push(o);
-  }
-  return picked.map((o) => ({ ...o, items: [o.top, o.bottom, o.layer, o.shoes].filter(Boolean), ctx }));
-}
-
-function reasonFor(o) {
+function weatherNote(look) {
   const t = state.temp;
   const feel = t >= 30 ? 'Light pieces for the heat' : t >= 22 ? 'Easy pieces for a warm day' : t >= 16 ? 'Balanced for mild weather' : 'Warm enough for the cold';
-  const bits = [feel];
-  if (o.layer) bits.push('with a layer on top');
-  if (colourMatch(o.top.colour, o.bottom.colour) >= 0.7) bits.push('colours that sit well together');
-  return bits.join(', ') + '.';
+  return feel + (look.jacket ? ', with a layer on top.' : '.');
 }
 
-/* ---------- rendering ---------- */
+function renderToday() {
+  const box = $('#results');
+  box.replaceChildren();
+  const picks = E.todayPicks(state.items, state.profile, { occasion: state.occasion, temp: state.temp, recent: daysSinceWorn() });
+  if (!picks) {
+    box.append(h('p', { class: 'empty stitch' }, 'Add at least one top and one bottom in the Wardrobe tab, and Stylo can suggest outfits.'));
+    return;
+  }
+  for (const look of picks) box.append(lookCard(look, { wear: true, note: weatherNote(look) }));
+}
+
+/* ---------- Lookbook ---------- */
+
+function optionList(select, list, withNone) {
+  select.replaceChildren();
+  if (withNone) select.append(h('option', { value: '' }, 'None'));
+  for (const i of list) select.append(h('option', { value: i.id }, `${i.code} · ${itemLabel(i)}`));
+}
+
+function populateTry() {
+  const of = (...types) => state.items.filter((i) => types.includes(i.type));
+  optionList($('#try-top'), of('shirt', 'tshirt'), false);
+  optionList($('#try-bottom'), of('pants', 'jeans'), false);
+  optionList($('#try-shoes'), of('shoes'), true);
+  optionList($('#try-jacket'), of('jacket'), true);
+}
+
+function rateChosen() {
+  const out = $('#try-result');
+  out.replaceChildren();
+  const find = (id) => state.items.find((i) => i.id === id) || null;
+  const top = find($('#try-top').value), bottom = find($('#try-bottom').value);
+  if (!top || !bottom) { out.append(h('p', { class: 'note' }, 'Add a top and a bottom first.')); return; }
+  const o = { top, bottom, shoes: find($('#try-shoes').value), jacket: find($('#try-jacket').value) };
+  const r = E.scoreLook(o, state.profile);
+  const look = { ...o, r, acc: [], alt: null, items: [top, bottom, o.shoes, o.jacket].filter(Boolean) };
+  look.id = look.items.map((i) => i.code).join(' + ');
+
+  const card = lookCard(look);
+  const better = E.betterThan(E.buildLooks(state.items, state.profile), look);
+  if (better) card.insertBefore(h('p', { class: 'alt' }, `A stronger option from your wardrobe: ${better.id} (${better.r.total.toFixed(1)}/10).`), card.querySelector('.button-row'));
+  else if (r.total >= 7.5) card.insertBefore(h('p', { class: 'alt' }, 'Nothing in your wardrobe clearly beats this with the same top or bottom.'), card.querySelector('.button-row'));
+  out.append(card);
+}
+
+function renderLookbook() {
+  populateTry();
+  const box = $('#lookbook');
+  box.replaceChildren();
+  $('#skip').hidden = true;
+
+  const tops = state.items.filter((i) => E.TOPS.includes(i.type));
+  const bottoms = state.items.filter((i) => E.BOTTOMS.includes(i.type));
+  if (state.items.length < 4 || !tops.length || !bottoms.length) {
+    box.append(h('p', { class: 'empty stitch' },
+      'The lookbook opens once you have at least one top, one bottom and four items in total. Add more clothes in the Wardrobe tab.'));
+    return;
+  }
+
+  const hasProfile = !!(state.profile.depth || (state.profile.undertone && state.profile.undertone !== 'unsure'));
+  const looks = E.buildLooks(state.items, state.profile);
+  const groups = E.collections(looks, hasProfile);
+  if (!groups.length) {
+    box.append(h('p', { class: 'empty stitch' }, 'No combination from your current clothes rates well enough to recommend yet. Add more pieces, or check the list of combinations to skip below.'));
+  }
+
+  for (const g of groups) {
+    const shown = state.expanded[g.key] ? g.looks.length : 6;
+    const wrap = h('div', { class: 'looks' }, ...g.looks.slice(0, shown).map((l) => lookCard(l)));
+    const sec = h('section', { class: 'collection' },
+      h('h2', {}, g.title),
+      h('p', { class: 'note' }, g.blurb),
+      wrap);
+    if (g.looks.length > shown) {
+      const more = h('button', { class: 'btn ghost more', type: 'button' }, `Show ${g.looks.length - shown} more`);
+      more.addEventListener('click', () => { state.expanded[g.key] = true; renderLookbook(); });
+      sec.append(more);
+    }
+    box.append(sec);
+  }
+
+  const weak = E.weakest(looks);
+  if (weak.length) {
+    $('#skip').hidden = false;
+    const list = $('#skip-list');
+    list.replaceChildren();
+    for (const w of weak) {
+      const p = h('p', { class: 'skip-item' },
+        h('strong', {}, `${w.look.id} (${w.look.r.total.toFixed(1)}/10)`),
+        `: ${w.look.r.cautions[0] || 'It scores low overall.'}`);
+      if (w.better) p.append(` Try ${w.better.id} (${w.better.r.total.toFixed(1)}/10) instead.`);
+      list.append(p);
+    }
+  }
+}
+
+/* ---------- Wardrobe ---------- */
 
 function renderWardrobe() {
   const list = state.items
-    .filter((i) => state.filter === 'all' || i.cat === state.filter)
-    .sort((a, b) => b.added - a.added);
+    .filter((i) => state.filter === 'all' || i.type === state.filter)
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   const grid = $('#grid');
   grid.replaceChildren();
   for (const it of list) {
-    const del = h('button', { class: 'remove', type: 'button', 'aria-label': `Remove ${CATS[it.cat].toLowerCase()}` }, 'Remove');
+    const dot = h('span', { class: 'dot' });
+    dot.style.background = it.colour;
+    const edit = h('button', { type: 'button', 'aria-label': `Edit ${it.code}` }, 'Edit');
+    edit.addEventListener('click', () => openDialog(it));
+    const del = h('button', { class: 'remove', type: 'button', 'aria-label': `Remove ${it.code}` }, 'Remove');
     del.addEventListener('click', async () => {
-      if (!confirm('Remove this item from your wardrobe?')) return;
+      if (!confirm(`Remove ${it.code} from your wardrobe? Its ID will not be reused.`)) return;
       await remove('items', it.id);
       state.items = state.items.filter((x) => x.id !== it.id);
       renderWardrobe();
     });
-    const dot = h('span', { class: 'dot' });
-    dot.style.background = it.colour;
     grid.append(
       h('article', { class: 'item' },
-        h('img', { src: it.photo, alt: CATS[it.cat], loading: 'lazy' }),
-        h('div', { class: 'meta' }, dot, CATS[it.cat], del))
+        h('img', { src: it.photo, alt: it.note || itemLabel(it), loading: 'lazy' }),
+        h('div', { class: 'meta' }, dot, h('span', { class: 'code' }, it.code),
+          h('span', { class: 'label' }, it.note || itemLabel(it)),
+          h('div', { class: 'tools' }, edit, del)))
     );
   }
   $('#empty').hidden = list.length > 0;
   $('#count').textContent = state.items.length ? `(${state.items.length})` : '';
 }
 
-function renderOutfits(list) {
-  const box = $('#results');
-  box.replaceChildren();
+/* ---------- Add and edit dialog ---------- */
 
-  if (!list) {
-    box.append(
-      h('p', { class: 'empty stitch' },
-        'Add at least one top and one bottom in the Wardrobe tab, and Stylo can suggest outfits.')
-    );
-    return;
+function fillKinds(selected) {
+  const kind = $('#kind');
+  kind.replaceChildren();
+  for (const k of Object.keys(TYPES[$('#type').value].kinds)) kind.append(h('option', { value: k }, k));
+  if (selected) kind.value = selected;
+}
+
+function styleFromKind() {
+  $('#style').value = TYPES[$('#type').value].kinds[$('#kind').value];
+}
+
+function updateColourName() {
+  $('#colour-name').textContent = E.colourName($('#colour').value);
+}
+
+function resetForm() {
+  $('#form').reset();
+  state.draftPhoto = null;
+  $('#preview').hidden = true;
+  $('#preview').removeAttribute('src');
+  $('#photo-hint').hidden = false;
+  fillKinds();
+  styleFromKind();
+  $('#colour').value = '#808080';
+  updateColourName();
+}
+
+function openDialog(item) {
+  state.editingId = item ? item.id : null;
+  resetForm();
+  $('#dlg-title').textContent = item ? `Edit ${item.code}` : 'Add clothes';
+  $('#save-more').hidden = !!item;
+  $('#photo').required = !item;
+  if (item) {
+    state.draftPhoto = item.photo;
+    $('#preview').src = item.photo;
+    $('#preview').hidden = false;
+    $('#photo-hint').hidden = true;
+    $('#type').value = item.type;
+    fillKinds(item.kind);
+    $('#style').value = item.style;
+    $('#pattern').value = item.pattern || 'solid';
+    $('#warmth').value = item.warmth || 'medium';
+    $('#colour').value = item.colour;
+    $('#note').value = item.note || '';
+    updateColourName();
   }
+  $('#dlg').showModal();
+}
 
-  list.forEach((o, i) => {
-    const pieces = h('div', { class: 'pieces' });
-    for (const it of o.items) {
-      pieces.append(h('figure', {}, h('img', { src: it.photo, alt: CATS[it.cat] }), h('figcaption', {}, CATS[it.cat])));
+async function onPhoto(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const img = await loadImage(file);
+    const canvas = shrink(img);
+    state.draftPhoto = canvas.toDataURL('image/jpeg', 0.8);
+    $('#colour').value = dominantColour(canvas);
+    updateColourName();
+    $('#preview').src = state.draftPhoto;
+    $('#preview').hidden = false;
+    $('#photo-hint').hidden = true;
+  } catch {
+    toast('That photo could not be read. Try another one.');
+  }
+}
+
+async function saveItem() {
+  if (!state.draftPhoto) { toast('Add a photo first.'); return false; }
+  const data = {
+    type: $('#type').value,
+    kind: $('#kind').value,
+    style: $('#style').value,
+    pattern: $('#pattern').value,
+    warmth: $('#warmth').value,
+    colour: $('#colour').value,
+    note: $('#note').value.trim(),
+    photo: state.draftPhoto,
+  };
+  try {
+    const editing = state.editingId ? state.items.find((i) => i.id === state.editingId) : null;
+    if (editing) {
+      const typeChanged = editing.type !== data.type;
+      Object.assign(editing, data);
+      if (typeChanged) editing.code = await nextCode(data.type);
+      await put('items', editing);
+      toast(typeChanged ? `Saved. Its new ID is ${editing.code}.` : 'Saved.');
+    } else {
+      const item = { id: newId(), ...data, code: await nextCode(data.type), added: Date.now() };
+      await put('items', item);
+      state.items.push(item);
+      toast(`Added as ${item.code}.`);
     }
-    const btn = h('button', { class: 'btn primary', type: 'button' }, 'Wear this today');
-    btn.addEventListener('click', async () => {
-      const today = new Date();
-      const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const entry = { id: newId(), date, ids: o.items.map((x) => x.id) };
-      await put('worn', entry);
-      state.worn.push(entry);
-      btn.textContent = 'Saved for today';
-      btn.disabled = true;
-      toast("Saved. Stylo will vary tomorrow's picks.");
-    });
-    box.append(
-      h('article', { class: 'outfit stitch' },
-        h('h3', {}, `Outfit ${i + 1}`),
-        h('p', { class: 'why' }, reasonFor(o)),
-        pieces, btn)
-    );
+  } catch {
+    toast('Could not save. Your browser may be out of storage.');
+    return false;
+  }
+  renderWardrobe();
+  return true;
+}
+
+/* ---------- Profile, backup and inventory ---------- */
+
+function renderProfile() {
+  $('#p-depth').value = state.profile.depth || '';
+  $('#p-undertone').value = state.profile.undertone || '';
+}
+
+async function saveProfile() {
+  state.profile.depth = $('#p-depth').value;
+  state.profile.undertone = $('#p-undertone').value;
+  await put('meta', state.profile);
+  toast('Profile saved.');
+}
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+const today = () => new Date().toISOString().slice(0, 10);
+
+function exportBackup() {
+  const data = { app: 'stylo', version: 2, items: state.items, worn: state.worn, profile: state.profile, counters: state.counters };
+  download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `stylo-backup-${today()}.json`);
+}
+
+async function importBackup(file) {
+  try {
+    const data = JSON.parse(await file.text());
+    if (data.app !== 'stylo' || !Array.isArray(data.items)) throw new Error('not a Stylo backup');
+    let count = 0;
+    for (const it of data.items) {
+      if (!it.id || !it.type || !TYPES[it.type] || !it.colour || !it.photo) continue;
+      await put('items', it);
+      count++;
+    }
+    for (const w of data.worn || []) if (w.id && Array.isArray(w.ids)) await put('worn', w);
+    if (data.profile) { state.profile = { ...state.profile, depth: data.profile.depth || '', undertone: data.profile.undertone || '' }; await put('meta', state.profile); }
+    for (const [k, v] of Object.entries(data.counters || {})) {
+      if (k !== 'id' && Number.isFinite(v)) state.counters[k] = Math.max(state.counters[k] || 0, v);
+    }
+    await put('meta', state.counters);
+    state.items = await getAll('items');
+    state.worn = await getAll('worn');
+    await migrate();
+    renderWardrobe();
+    renderProfile();
+    toast(`Restored ${count} items.`);
+  } catch {
+    toast('That file is not a Stylo backup.');
+  }
+}
+
+function exportCsv() {
+  const cell = (v) => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const rows = [['ID', 'Type', 'Kind', 'Colour', 'Hex', 'Pattern', 'Style', 'Warmth', 'Note']];
+  for (const i of [...state.items].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))) {
+    rows.push([i.code, TYPES[i.type].label, i.kind, E.colourName(i.colour), i.colour, i.pattern, STYLE_LABEL[i.style], i.warmth, i.note]);
+  }
+  download(new Blob([rows.map((r) => r.map(cell).join(',')).join('\n')], { type: 'text/csv' }), `stylo-inventory-${today()}.csv`);
+}
+
+/* ---------- save a look as an image board ---------- */
+
+function roundRect(x, px, py, w, hgt, r) {
+  x.beginPath();
+  x.moveTo(px + r, py);
+  x.arcTo(px + w, py, px + w, py + hgt, r);
+  x.arcTo(px + w, py + hgt, px, py + hgt, r);
+  x.arcTo(px, py + hgt, px, py, r);
+  x.arcTo(px, py, px + w, py, r);
+  x.closePath();
+}
+
+async function saveBoard(look) {
+  const imgs = await Promise.all(look.items.map((it) => new Promise((res) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => res(null);
+    im.src = it.photo;
+  })));
+  const n = look.items.length;
+  const cols = Math.min(n, 3), rows = Math.ceil(n / cols);
+  const cell = 340, gap = 24, headH = 96, cap = 46, foot = 110;
+  const W = cols * cell + (cols + 1) * gap;
+  const H = headH + gap + rows * (cell + cap) + foot;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+
+  x.fillStyle = '#f3f5f8'; x.fillRect(0, 0, W, H);
+  x.fillStyle = '#22345a'; x.fillRect(0, 0, W, headH);
+
+  const ratingText = `${look.r.total.toFixed(1)}/10`;
+  x.fillStyle = '#f3f5f8';
+  x.textBaseline = 'middle';
+  let fs = 38;
+  x.font = `italic 600 ${fs}px Georgia, serif`;
+  while (fs > 18 && x.measureText(look.id).width > W - 3 * gap - 130) { fs -= 2; x.font = `italic 600 ${fs}px Georgia, serif`; }
+  x.textAlign = 'left';
+  x.fillText(look.id, gap, headH / 2);
+  x.font = '700 34px system-ui, sans-serif';
+  x.fillStyle = '#e8b02c';
+  x.textAlign = 'right';
+  x.fillText(ratingText, W - gap, headH / 2);
+
+  look.items.forEach((it, i) => {
+    const px = gap + (i % cols) * (cell + gap);
+    const py = headH + gap + Math.floor(i / cols) * (cell + cap);
+    x.save();
+    roundRect(x, px, py, cell, cell, 14);
+    x.clip();
+    const im = imgs[i];
+    if (im) {
+      const side = Math.min(im.width, im.height);
+      x.drawImage(im, (im.width - side) / 2, (im.height - side) / 2, side, side, px, py, cell, cell);
+    } else { x.fillStyle = '#dde1e8'; x.fillRect(px, py, cell, cell); }
+    x.restore();
+    x.fillStyle = '#1b2236';
+    x.font = '600 21px system-ui, sans-serif';
+    x.textAlign = 'left';
+    x.fillText(`${it.code} · ${itemLabel(it)}`.slice(0, 34), px, py + cell + 24);
   });
+
+  const names = [...new Set(look.items.map((i) => E.colourName(i.colour)))].join(', ');
+  const fy = H - foot + 30;
+  x.fillStyle = '#5d6679';
+  x.textAlign = 'left';
+  x.font = '22px system-ui, sans-serif';
+  x.fillText(`Colours: ${names}`.slice(0, 70), gap, fy);
+  x.fillText(`${E.verdict(look.r.total)} look`, gap, fy + 34);
+  x.fillStyle = '#22345a';
+  x.textAlign = 'right';
+  x.font = 'italic 600 24px Georgia, serif';
+  x.fillText('Stylo', W - gap, fy + 34);
+
+  c.toBlob((b) => download(b, `Stylo-${look.id.replace(/ \+ /g, '-')}.png`), 'image/png');
 }
 
 /* ---------- weather ---------- */
@@ -309,8 +597,7 @@ function useLocation() {
 
         const sel = $('#weather');
         $$('option[data-live]', sel).forEach((o) => o.remove());
-        const opt = h('option', { value: String(state.temp), 'data-live': '1' }, `Today near you, ${state.temp}°C`);
-        sel.prepend(opt);
+        sel.prepend(h('option', { value: String(state.temp), 'data-live': '1' }, `Today near you, ${state.temp}°C`));
         sel.value = String(state.temp);
         note.textContent = state.rain >= 50 ? `Rain is likely (${state.rain}%). Take an umbrella.` : 'Weather updated for your location.';
       } catch {
@@ -322,64 +609,20 @@ function useLocation() {
   );
 }
 
-/* ---------- add-clothes dialog ---------- */
-
-function resetForm() {
-  $('#form').reset();
-  state.draft = null;
-  $('#preview').hidden = true;
-  $('#preview').removeAttribute('src');
-  $('#photo-hint').hidden = false;
-  $('#colour').value = '#808080';
-}
-
-async function onPhoto(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    const img = await loadImage(file);
-    const canvas = shrink(img);
-    state.draft = { photo: canvas.toDataURL('image/jpeg', 0.8) };
-    $('#colour').value = dominantColour(canvas);
-    $('#preview').src = state.draft.photo;
-    $('#preview').hidden = false;
-    $('#photo-hint').hidden = true;
-  } catch {
-    toast('That photo could not be read. Try another one.');
-  }
-}
-
-async function saveItem() {
-  if (!state.draft) { toast('Add a photo first.'); return false; }
-  const item = {
-    id: newId(),
-    cat: $('#cat').value,
-    style: $('#style').value,
-    warmth: $('#warmth').value,
-    colour: $('#colour').value,
-    photo: state.draft.photo,
-    added: Date.now(),
-  };
-  try {
-    await put('items', item);
-  } catch {
-    toast('Could not save. Your browser may be out of storage.');
-    return false;
-  }
-  state.items.push(item);
-  renderWardrobe();
-  toast('Added to your wardrobe.');
-  return true;
-}
-
 /* ---------- wiring ---------- */
 
 function bind() {
+  // dialog selects are built from the same list the engine uses
+  const typeSel = $('#type');
+  for (const [key, t] of Object.entries(TYPES)) typeSel.append(h('option', { value: key }, t.label));
+
   $$('.tabs button').forEach((b) =>
     b.addEventListener('click', () => {
       $$('.tabs button').forEach((x) => x.removeAttribute('aria-current'));
       b.setAttribute('aria-current', 'page');
       $$('.view').forEach((v) => v.classList.toggle('active', v.id === 'view-' + b.dataset.view));
+      if (b.dataset.view === 'lookbook') renderLookbook();
+      if (b.dataset.view === 'profile') renderProfile();
       window.scrollTo(0, 0);
     })
   );
@@ -393,7 +636,8 @@ function bind() {
 
   $('#weather').addEventListener('change', (e) => { state.temp = Number(e.target.value); });
   $('#locate').addEventListener('click', useLocation);
-  $('#suggest').addEventListener('click', () => renderOutfits(suggest()));
+  $('#suggest').addEventListener('click', renderToday);
+  $('#try-go').addEventListener('click', rateChosen);
 
   $$('#filters button').forEach((b) =>
     b.addEventListener('click', () => {
@@ -404,15 +648,29 @@ function bind() {
   );
 
   const dlg = $('#dlg');
-  $('#add').addEventListener('click', () => { resetForm(); dlg.showModal(); });
+  $('#add').addEventListener('click', () => openDialog(null));
   $('#cancel').addEventListener('click', () => dlg.close());
   $('#photo').addEventListener('change', onPhoto);
+  $('#type').addEventListener('change', () => { fillKinds(); styleFromKind(); });
+  $('#kind').addEventListener('change', styleFromKind);
+  $('#colour').addEventListener('input', updateColourName);
   $('#form').addEventListener('submit', async (e) => {
     e.preventDefault();
     if (await saveItem()) dlg.close();
   });
   $('#save-more').addEventListener('click', async () => {
     if (await saveItem()) resetForm();
+  });
+
+  $('#p-depth').addEventListener('change', saveProfile);
+  $('#p-undertone').addEventListener('change', saveProfile);
+  $('#export').addEventListener('click', exportBackup);
+  $('#csv').addEventListener('click', exportCsv);
+  $('#import').addEventListener('click', () => $('#import-file').click());
+  $('#import-file').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    if (f) importBackup(f);
+    e.target.value = '';
   });
 }
 
@@ -422,6 +680,9 @@ async function init() {
     db = await openDB();
     state.items = await getAll('items');
     state.worn = await getAll('worn');
+    state.profile = (await getOne('meta', 'profile')) || state.profile;
+    state.counters = (await getOne('meta', 'counters')) || state.counters;
+    await migrate();
   } catch {
     toast('Saving is not available in this browser mode. Try a normal tab.');
   }

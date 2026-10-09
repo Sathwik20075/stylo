@@ -241,3 +241,74 @@ dialog::backdrop { background: rgba(27, 34, 54, .55); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------- lookbook, profile and v0.2 additions ---------- */
+.btn.small { min-height: 36px; padding: 0 12px; font-size: 14px; }
+.stack { display: grid; gap: 8px; }
+.card {
+  background: var(--paper);
+  border: 1.5px solid var(--seam);
+  border-radius: var(--r);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.card h3 { font: 600 18px/1.3 Georgia, "Iowan Old Style", serif; margin-bottom: 6px; }
+.card .fields { margin-top: 10px; }
+input[type="text"] {
+  font: inherit;
+  min-height: 44px;
+  width: 100%;
+  border: 1.5px solid var(--seam);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.tool {
+  background: var(--paper);
+  border: 1.5px solid var(--seam);
+  border-radius: var(--r);
+  padding: 4px 16px;
+  margin: 14px 0;
+}
+.tool summary { min-height: 44px; display: flex; align-items: center; font-weight: 600; cursor: pointer; }
+.tool[open] { padding-bottom: 16px; }
+.try-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.try-grid label { display: grid; gap: 4px; font-weight: 600; }
+.try-grid select { width: 100%; font-weight: 400; }
+#try-result { margin-top: 12px; }
+
+.collection { margin-top: 26px; }
+.collection h2 { margin-bottom: 2px; }
+.collection > .note { margin: 0 0 12px; }
+.looks { display: grid; gap: 14px; }
+.more { margin-top: 12px; }
+
+.look-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.look-head h3 { font: 600 17px/1.3 system-ui, sans-serif; overflow-wrap: anywhere; }
+.rating { margin: 0; text-align: right; font-weight: 700; font-size: 20px; line-height: 1.1; flex: none; }
+.rating span { display: block; font-size: 13px; font-weight: 600; color: var(--muted); }
+.colours { margin: 6px 0 12px; font-size: 14px; color: var(--muted); }
+.reasons { margin: 0 0 10px; padding-left: 18px; font-size: 14px; }
+.reasons.bad { color: var(--danger); }
+.alt { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+.button-row { display: flex; gap: 8px; flex-wrap: wrap; position: relative; z-index: 1; }
+.button-row .btn { flex: 1 1 140px; }
+.outfit .btn { width: auto; }
+.weather-line { margin: 4px 0 8px; font-size: 14px; color: var(--muted); }
+
+.item .code { font-weight: 700; }
+.item .meta { flex-wrap: wrap; row-gap: 2px; }
+.item .meta .label { flex: 1 1 60%; min-width: 0; font-size: 13px; color: var(--muted); }
+.item .tools { display: flex; width: 100%; gap: 4px; }
+.item .tools button {
+  border: 0; background: none; font: inherit; font-size: 13px; min-height: 32px;
+  padding: 0 8px 0 0; color: var(--denim); cursor: pointer;
+}
+.item .tools .remove { color: var(--danger); margin-left: auto; padding: 0; }
+
+.tabs button { font-size: 14px; }
+.skip-item { margin: 0 0 12px; font-size: 14px; }
+.skip-item strong { overflow-wrap: anywhere; }
