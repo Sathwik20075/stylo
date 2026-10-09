@@ -1,0 +1,57 @@
+{
+  "name": "stylo",
+  "version": "0.1.0",
+  "description": "Outfit ideas for the day, made from your own wardrobe.",
+  "main": "main.js",
+  "author": "Stylo",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.stylo.app",
+    "productName": "Stylo",
+    "files": [
+      "main.js",
+      "index.html",
+      "app.js",
+      "style.css",
+      "manifest.webmanifest",
+      "sw.js",
+      "icons/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.lifestyle",
+      "icon": "icons/icon-512.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "icon": "icons/icon-512.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "icon": "icons/icon-512.png",
+      "category": "Utility",
+      "target": [
+        "AppImage"
+      ]
+    }
+  }
+}

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#22345a">
+  <meta name="description" content="Outfit ideas for the day, made from your own wardrobe.">
+  <title>Stylo</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Stylo</h1>
+    <p class="tagline">Outfits from your own wardrobe</p>
+  </header>
+
+  <main>
+    <!-- Today -->
+    <section id="view-today" class="view active" aria-labelledby="today-title">
+      <h2 id="today-title">What are you dressing for?</h2>
+      <div class="chips" role="radiogroup" aria-label="Occasion" id="occasion">
+        <button type="button" role="radio" aria-checked="true" data-value="casual">Casual</button>
+        <button type="button" role="radio" aria-checked="false" data-value="work">Work</button>
+        <button type="button" role="radio" aria-checked="false" data-value="party">Party</button>
+        <button type="button" role="radio" aria-checked="false" data-value="gym">Gym</button>
+      </div>
+
+      <div class="weather">
+        <label for="weather">Weather today</label>
+        <div class="weather-row">
+          <select id="weather">
+            <option value="32">Hot, around 32°C</option>
+            <option value="26">Warm, around 26°C</option>
+            <option value="20" selected>Mild, around 20°C</option>
+            <option value="14">Cool, around 14°C</option>
+            <option value="8">Cold, around 8°C</option>
+          </select>
+          <button type="button" class="btn ghost" id="locate">Use my location</button>
+        </div>
+        <p id="weather-note" class="note" aria-live="polite"></p>
+      </div>
+
+      <button type="button" class="btn primary wide" id="suggest">Suggest outfits</button>
+      <div id="results" aria-live="polite"></div>
+    </section>
+
+    <!-- Wardrobe -->
+    <section id="view-wardrobe" class="view" aria-labelledby="wardrobe-title">
+      <div class="head-row">
+        <h2 id="wardrobe-title">Your clothes <span id="count" class="count"></span></h2>
+        <button type="button" class="btn primary" id="add">Add clothes</button>
+      </div>
+      <div class="chips" id="filters" aria-label="Filter by type">
+        <button type="button" aria-pressed="true" data-value="all">All</button>
+        <button type="button" aria-pressed="false" data-value="top">Tops</button>
+        <button type="button" aria-pressed="false" data-value="bottom">Bottoms</button>
+        <button type="button" aria-pressed="false" data-value="layer">Layers</button>
+        <button type="button" aria-pressed="false" data-value="shoes">Shoes</button>
+      </div>
+      <div id="grid" class="grid"></div>
+      <p id="empty" class="empty stitch" hidden>
+        No clothes here yet. Add a photo of a shirt, trousers or shoes to get started.
+      </p>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Main">
+    <button type="button" data-view="today" aria-current="page">Today</button>
+    <button type="button" data-view="wardrobe">Wardrobe</button>
+  </nav>
+
+  <dialog id="dlg" aria-labelledby="dlg-title">
+    <form id="form" autocomplete="off">
+      <h2 id="dlg-title">Add clothes</h2>
+
+      <label class="photo" for="photo">
+        <img id="preview" alt="" hidden>
+        <span id="photo-hint">Take or choose a photo</span>
+      </label>
+      <input type="file" id="photo" accept="image/*" required>
+
+      <div class="fields">
+        <label>Type
+          <select id="cat">
+            <option value="top">Top</option>
+            <option value="bottom">Bottom</option>
+            <option value="layer">Layer (jacket, sweater)</option>
+            <option value="shoes">Shoes</option>
+          </select>
+        </label>
+        <label>Style
+          <select id="style">
+            <option value="casual">Casual</option>
+            <option value="smart">Smart</option>
+            <option value="sport">Sport</option>
+          </select>
+        </label>
+        <label>Warmth
+          <select id="warmth">
+            <option value="light">Light</option>
+            <option value="medium" selected>Medium</option>
+            <option value="warm">Warm</option>
+          </select>
+        </label>
+        <label>Colour
+          <span class="colour-row">
+            <input type="color" id="colour" value="#808080">
+            <small>Picked from your photo. Change it if it looks off.</small>
+          </span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn ghost" id="cancel">Cancel</button>
+        <button type="button" class="btn ghost" id="save-more">Save and add another</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
