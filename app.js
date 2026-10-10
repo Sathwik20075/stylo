@@ -15,6 +15,8 @@ const state = {
   occasion: 'casual',
   temp: 20,
   rain: null,
+  place: null,
+  weatherAt: 0,
   filter: 'all',
   draftPhoto: null,
   editingId: null,
@@ -322,7 +324,7 @@ function renderToday() {
   box.replaceChildren();
   const picks = E.todayPicks(state.items, state.profile, { occasion: state.occasion, temp: state.temp, recent: daysSinceWorn() });
   if (!picks) {
-    box.append(h('p', { class: 'empty stitch' }, 'Add at least one top and one bottom in the Wardrobe tab, and Stylo can suggest outfits.'));
+    box.append(h('p', { class: 'empty stitch' }, 'Add at least one top and one bottom, or a dress or saree, in the Wardrobe tab, and Stylo can suggest outfits.'));
     return;
   }
   for (const look of picks) box.append(lookCard(look, { wear: true, note: weatherNote(look) }));
@@ -338,8 +340,8 @@ function optionList(select, list, withNone) {
 
 function populateTry() {
   const of = (...types) => state.items.filter((i) => types.includes(i.type));
-  optionList($('#try-top'), of('shirt', 'tshirt'), false);
-  optionList($('#try-bottom'), of('pants', 'jeans'), false);
+  optionList($('#try-top'), of('shirt', 'tshirt', 'onepiece'), false);
+  optionList($('#try-bottom'), of('pants', 'jeans', 'skirt'), true);
   optionList($('#try-shoes'), of('shoes'), true);
   optionList($('#try-jacket'), of('jacket'), true);
 }
@@ -348,11 +350,14 @@ function rateChosen() {
   const out = $('#try-result');
   out.replaceChildren();
   const find = (id) => state.items.find((i) => i.id === id) || null;
-  const top = find($('#try-top').value), bottom = find($('#try-bottom').value);
-  if (!top || !bottom) { out.append(h('p', { class: 'note' }, 'Add a top and a bottom first.')); return; }
-  const o = { top, bottom, shoes: find($('#try-shoes').value), jacket: find($('#try-jacket').value) };
+  const base = find($('#try-top').value), bottom = find($('#try-bottom').value);
+  if (!base) { out.append(h('p', { class: 'note' }, 'Add a top or a dress first.')); return; }
+  const isFull = E.FULLS.includes(base.type);
+  if (!isFull && !bottom) { out.append(h('p', { class: 'note' }, 'Pick a bottom, or start with a dress or saree.')); return; }
+  const shoes = find($('#try-shoes').value), jacket = find($('#try-jacket').value);
+  const o = isFull ? { full: base, shoes, jacket } : { top: base, bottom, shoes, jacket };
   const r = E.scoreLook(o, state.profile);
-  const look = { ...o, r, acc: [], alt: null, items: [top, bottom, o.shoes, o.jacket].filter(Boolean) };
+  const look = { ...o, r, acc: [], alt: null, items: [base, isFull ? null : bottom, shoes, jacket].filter(Boolean) };
   look.id = look.items.map((i) => i.code).join(' + ');
 
   const card = lookCard(look);
@@ -370,9 +375,10 @@ function renderLookbook() {
 
   const tops = state.items.filter((i) => E.TOPS.includes(i.type));
   const bottoms = state.items.filter((i) => E.BOTTOMS.includes(i.type));
-  if (state.items.length < 4 || !tops.length || !bottoms.length) {
+  const fulls = state.items.filter((i) => E.FULLS.includes(i.type));
+  if (state.items.length < 4 || !((tops.length && bottoms.length) || fulls.length)) {
     box.append(h('p', { class: 'empty stitch' },
-      'The lookbook opens once you have at least one top, one bottom and four items in total. Add more clothes in the Wardrobe tab.'));
+      'The lookbook opens once you have a top and a bottom (or a dress or saree), and four items in total. Add more clothes in the Wardrobe tab.'));
     return;
   }
 
@@ -695,35 +701,107 @@ async function saveBoard(look) {
 
 /* ---------- weather ---------- */
 
-function useLocation() {
-  const note = $('#weather-note');
-  if (!navigator.geolocation) { note.textContent = 'Location is not available. Pick the weather from the list.'; return; }
-  note.textContent = 'Checking the weather...';
-  navigator.geolocation.getCurrentPosition(
-    async (pos) => {
-      try {
-        const { latitude, longitude } = pos.coords;
-        const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
-          '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1';
-        const res = await fetch(url);
-        if (!res.ok) throw new Error('bad response');
-        const j = await res.json();
-        const max = j.daily.temperature_2m_max[0], min = j.daily.temperature_2m_min[0];
-        state.temp = Math.round(max * 0.6 + min * 0.4);
-        state.rain = j.daily.precipitation_probability_max[0];
+const GEO_ERRORS = {
+  1: 'Location permission was blocked. Search your city instead, or allow location for this site in your browser settings.',
+  2: 'This device could not work out its location. Search your city instead.',
+  3: 'Finding your location took too long. Search your city instead.',
+};
 
-        const sel = $('#weather');
-        $$('option[data-live]', sel).forEach((o) => o.remove());
-        sel.prepend(h('option', { value: String(state.temp), 'data-live': '1' }, `Today near you, ${state.temp}°C`));
-        sel.value = String(state.temp);
-        note.textContent = state.rain >= 50 ? `Rain is likely (${state.rain}%). Take an umbrella.` : 'Weather updated for your location.';
-      } catch {
-        note.textContent = 'Could not get the weather. Pick it from the list instead.';
-      }
-    },
-    () => { note.textContent = 'Could not get your location. Pick the weather from the list instead.'; },
-    { timeout: 10000 }
+const setSummary = (text) => { $('#weather-summary').textContent = text; };
+
+function showPlacePanel(msg) {
+  $('#place-panel').hidden = false;
+  $('#weather-note').textContent = msg || '';
+}
+
+async function fetchWeather(place) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${place.lat}&longitude=${place.lon}` +
+    '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=1';
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('weather');
+  const j = await res.json();
+  const max = j.daily.temperature_2m_max[0], min = j.daily.temperature_2m_min[0];
+  state.temp = Math.round(max * 0.6 + min * 0.4);
+  state.rain = j.daily.precipitation_probability_max[0];
+  state.weatherAt = Date.now();
+
+  const sel = $('#weather');
+  $$('option[data-live]', sel).forEach((o) => o.remove());
+  sel.prepend(h('option', { value: String(state.temp), 'data-live': '1' }, `From the forecast, ${state.temp}°C`));
+  sel.value = String(state.temp);
+
+  const rain = state.rain >= 50 ? ` Rain is likely (${state.rain}%), so take an umbrella.` : '';
+  setSummary(`${place.name}: about ${state.temp}°C today (high ${Math.round(max)}°, low ${Math.round(min)}°).${rain}`);
+  $('#weather-note').textContent = '';
+}
+
+async function weatherFor(place) {
+  setSummary('Checking the weather...');
+  try {
+    await fetchWeather(place);
+  } catch {
+    setSummary('Could not get the forecast.');
+    showPlacePanel('Check your internet connection, or choose the weather by hand below.');
+  }
+}
+
+async function choosePlace(place) {
+  state.place = place;
+  try { await put('meta', place); } catch { /* still works for this session */ }
+  $('#place-panel').hidden = true;
+  $('#place-results').replaceChildren();
+  await weatherFor(place);
+}
+
+function useDevice() {
+  if (!navigator.geolocation) {
+    setSummary('Weather needs a location.');
+    showPlacePanel('Device location is not available here. Search your city instead.');
+    return;
+  }
+  setSummary('Finding your location...');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => choosePlace({
+      id: 'place',
+      name: 'Near you',
+      device: true,
+      lat: Math.round(pos.coords.latitude * 100) / 100,
+      lon: Math.round(pos.coords.longitude * 100) / 100,
+    }),
+    (err) => { setSummary('Weather needs a location.'); showPlacePanel(GEO_ERRORS[err.code] || GEO_ERRORS[2]); },
+    { timeout: 10000, maximumAge: 600000 }
   );
+}
+
+// Runs by itself when the app opens: a saved place is used straight away, otherwise the device is asked once.
+function loadWeather() {
+  if (state.place) weatherFor(state.place);
+  else useDevice();
+}
+
+async function searchPlace() {
+  const q = $('#place-input').value.trim();
+  const box = $('#place-results');
+  box.replaceChildren();
+  if (q.length < 2) return;
+  try {
+    const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=5&language=en&format=json`);
+    const j = await res.json();
+    if (!j.results || !j.results.length) { box.append(h('p', { class: 'note' }, 'No place found. Try the nearest bigger town.')); return; }
+    for (const r of j.results) {
+      const label = [r.name, r.admin1, r.country].filter(Boolean).join(', ');
+      const b = h('button', { type: 'button', class: 'place' }, label);
+      b.addEventListener('click', () => choosePlace({
+        id: 'place',
+        name: r.name,
+        lat: Math.round(r.latitude * 100) / 100,
+        lon: Math.round(r.longitude * 100) / 100,
+      }));
+      box.append(b);
+    }
+  } catch {
+    box.append(h('p', { class: 'note' }, 'Could not search. Check your internet connection.'));
+  }
 }
 
 /* ---------- wiring ---------- */
@@ -751,8 +829,18 @@ function bind() {
     })
   );
 
-  $('#weather').addEventListener('change', (e) => { state.temp = Number(e.target.value); });
-  $('#locate').addEventListener('click', useLocation);
+  $('#weather').addEventListener('change', (e) => {
+    state.temp = Number(e.target.value);
+    setSummary(`Set by hand: about ${state.temp}°C.`);
+  });
+  $('#refresh-weather').addEventListener('click', () => (state.place && !state.place.device ? weatherFor(state.place) : useDevice()));
+  $('#change-place').addEventListener('click', () => { $('#place-panel').hidden = !$('#place-panel').hidden; });
+  $('#place-search').addEventListener('click', searchPlace);
+  $('#place-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchPlace(); } });
+  $('#use-device').addEventListener('click', useDevice);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.place && Date.now() - state.weatherAt > 3600e3) weatherFor(state.place);
+  });
   $('#suggest').addEventListener('click', renderToday);
   $('#try-go').addEventListener('click', rateChosen);
 
@@ -810,11 +898,13 @@ async function init() {
     state.profile = (await getOne('meta', 'profile')) || state.profile;
     state.counters = (await getOne('meta', 'counters')) || state.counters;
     state.me = (await getOne('meta', 'me')) || state.me;
+    state.place = (await getOne('meta', 'place')) || null;
     await migrate();
   } catch {
     toast('Saving is not available in this browser mode. Try a normal tab.');
   }
   renderWardrobe();
+  loadWeather();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 }
 

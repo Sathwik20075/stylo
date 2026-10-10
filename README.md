@@ -68,10 +68,14 @@ To build installers locally run `npm run dist`; the files appear in `dist/`.
 
 ---
 
-## What it does today (version 0.3)
+## What it does today (version 0.3.1)
 
-- **Wardrobe with IDs:** every item gets a permanent ID (SH01 shirt, TS01 T-shirt or polo, PT01 pants or cargos,
-  JN01 jeans, SHOE01 shoes, JK01 jacket or hoodie, AC01 accessory). IDs are never reused, even after you remove an item.
+- **For everyone:** the wardrobe covers women's and men's clothes. Tops include blouses and kurtis, bottoms include
+  skirts, leggings and palazzos, and dresses, sarees, salwar suits and lehengas count as complete outfits on their own.
+  Shoes include heels and flats, and accessories include bags, jewellery and dupattas. There is an "Ethnic and festive"
+  collection in the lookbook.
+- **Wardrobe with IDs:** every item gets a permanent ID (SH01 shirt, TS01 top or kurti, PT01 pants or leggings,
+  SK01 skirt, DR01 dress or saree, JN01 jeans, SHOE01 shoes, JK01 jacket or cardigan, AC01 accessory). IDs are never reused, even after you remove an item.
   Each item records type, kind, colour (picked from the photo, with a colour name), pattern, style and warmth.
 - **Lookbook:** the best outfit for every top and bottom pairing, using only clothes you own. Each look shows its
   outfit ID, a rating out of 10, the colours, why it works, cautions, and what changes if you swap the shoes or layer.
@@ -79,6 +83,8 @@ To build installers locally run `npm run dist`; the files appear in `dist/`.
   Best colour combinations, Underrated combinations. Empty collections are hidden.
 - **Honest ratings:** weak pairings get low scores and appear under "Combinations to skip" with a better option.
   "Rate a combination" scores any top, bottom, shoes and layer you pick.
+- **Weather by itself:** when the app opens it finds the forecast for your place automatically. If device location is
+  blocked or unavailable (the desktop app cannot read it), search your city once and Stylo remembers it.
 - **Today:** three outfits for the occasion and the weather, avoiding what you wore in the last few days.
 - **Save as image:** each look can be saved as a picture board of your real item photos with IDs and rating.
 - **Profile:** optional skin depth and undertone nudge the colour advice. You choose them yourself, because Stylo
@@ -119,7 +125,7 @@ input photos and any thinking the model does. Prices change, so check the curren
 watch your first real previews in Google Cloud billing before raising `DAILY_CAP`.
 
 ## Known limits
-- "Use my location" may not work in the desktop app. Pick the weather from the list instead.
+- Device location does not work in the desktop app. Search your city instead (it is remembered).
 - Wardrobe data lives in one app or browser only. The desktop app and the web app do not share data, but you can
   move it between them with a backup file.
 - Ratings come from colour and style rules, so they are a well-reasoned guide, not a verdict.

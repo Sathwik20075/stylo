@@ -28,19 +28,33 @@
         <button type="button" role="radio" aria-checked="false" data-value="formal">Formal</button>
       </div>
 
-      <div class="weather">
-        <label for="weather">Weather today</label>
+      <div class="weather" id="weather-card">
+        <h3 class="w-title">Weather today</h3>
+        <p id="weather-summary" class="w-summary" aria-live="polite">Checking the weather...</p>
         <div class="weather-row">
-          <select id="weather">
+          <button type="button" class="btn ghost small" id="refresh-weather">Refresh</button>
+          <button type="button" class="btn ghost small" id="change-place">Change place</button>
+        </div>
+        <div id="place-panel" hidden>
+          <label for="place-input">Search your city or town</label>
+          <div class="weather-row">
+            <input type="text" id="place-input" placeholder="For example, Hyderabad" maxlength="60">
+            <button type="button" class="btn primary small" id="place-search">Search</button>
+          </div>
+          <div id="place-results" class="place-results"></div>
+          <button type="button" class="btn ghost small" id="use-device">Use my device location instead</button>
+        </div>
+        <p id="weather-note" class="note" aria-live="polite"></p>
+        <details class="by-hand">
+          <summary>Choose the weather by hand</summary>
+          <select id="weather" aria-label="Weather by hand">
             <option value="32">Hot, around 32°C</option>
             <option value="26">Warm, around 26°C</option>
             <option value="20" selected>Mild, around 20°C</option>
             <option value="14">Cool, around 14°C</option>
             <option value="8">Cold, around 8°C</option>
           </select>
-          <button type="button" class="btn ghost" id="locate">Use my location</button>
-        </div>
-        <p id="weather-note" class="note" aria-live="polite"></p>
+        </details>
       </div>
 
       <button type="button" class="btn primary wide" id="suggest">Suggest outfits</button>
@@ -55,8 +69,8 @@
       <details class="tool" id="try">
         <summary>Rate a combination</summary>
         <div class="try-grid">
-          <label>Top <select id="try-top"></select></label>
-          <label>Bottom <select id="try-bottom"></select></label>
+          <label>Top or dress <select id="try-top"></select></label>
+          <label>Bottom (not needed for a dress) <select id="try-bottom"></select></label>
           <label>Shoes <select id="try-shoes"></select></label>
           <label>Layer <select id="try-jacket"></select></label>
         </div>
@@ -83,13 +97,15 @@
         <button type="button" aria-pressed="false" data-value="tshirt">T-shirts and tops</button>
         <button type="button" aria-pressed="false" data-value="pants">Pants</button>
         <button type="button" aria-pressed="false" data-value="jeans">Jeans</button>
+        <button type="button" aria-pressed="false" data-value="skirt">Skirts</button>
+        <button type="button" aria-pressed="false" data-value="onepiece">Dresses and sarees</button>
         <button type="button" aria-pressed="false" data-value="shoes">Shoes</button>
         <button type="button" aria-pressed="false" data-value="jacket">Layers</button>
         <button type="button" aria-pressed="false" data-value="accessory">Accessories</button>
       </div>
       <div id="grid" class="grid"></div>
       <p id="empty" class="empty stitch" hidden>
-        No clothes here yet. Add a photo of a shirt, trousers or shoes to get started.
+        No clothes here yet. Add a photo of a top, dress, trousers or shoes to get started.
       </p>
     </section>
 
