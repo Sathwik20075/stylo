@@ -1,6 +1,6 @@
 {
   "name": "stylo",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Outfit ideas for the day, made from your own wardrobe.",
   "main": "main.js",
   "author": "Stylo",
@@ -19,9 +19,11 @@
     "files": [
       "main.js",
       "index.html",
+      "config.js",
       "engine.js",
       "app.js",
       "style.css",
+      "privacy.html",
       "manifest.webmanifest",
       "sw.js",
       "icons/**/*"

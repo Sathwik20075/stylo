@@ -123,6 +123,25 @@
         </div>
       </div>
 
+
+      <div class="card" id="me-card" hidden>
+        <h3>AI previews on you</h3>
+        <p class="note">Add photos of yourself and each look can be previewed on you. When you press Preview on me, your photos and that outfit's item photos are sent to an image service to make the picture. Stylo does not keep them on its server. Your photos stay on this device until you delete them.</p>
+        <label class="check"><input type="checkbox" id="me-adult"> I am 18 or older, and these are photos of me.</label>
+        <label class="check"><input type="checkbox" id="me-consent"> I agree to send my photos to the image service whenever I ask for a preview.</label>
+        <div class="me-photos">
+          <label>Face photo
+            <input type="file" id="me-face" accept="image/*">
+            <img id="me-face-img" alt="Your saved face photo" hidden>
+          </label>
+          <label>Full-body photo
+            <input type="file" id="me-body" accept="image/*">
+            <img id="me-body-img" alt="Your saved full-body photo" hidden>
+          </label>
+        </div>
+        <button type="button" class="btn ghost" id="me-delete">Delete my photos and previews</button>
+      </div>
+
       <div class="card">
         <h3>Your data</h3>
         <p class="note">Photos and wardrobe stay on this device. Save a backup file before you switch devices or clear your browser data.</p>
@@ -132,6 +151,7 @@
           <button type="button" class="btn ghost" id="csv">Download inventory (CSV)</button>
         </div>
         <input type="file" id="import-file" accept="application/json,.json" hidden>
+        <p class="note"><a href="privacy.html">Privacy details</a>. Backups never include your personal photos.</p>
       </div>
     </section>
   </main>
@@ -199,6 +219,7 @@
   </dialog>
 
   <div id="toast" role="status" aria-live="polite"></div>
+  <script src="config.js"></script>
   <script src="engine.js"></script>
   <script src="app.js"></script>
 </body>

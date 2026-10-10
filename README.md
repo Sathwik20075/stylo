@@ -68,7 +68,7 @@ To build installers locally run `npm run dist`; the files appear in `dist/`.
 
 ---
 
-## What it does today (version 0.2)
+## What it does today (version 0.3)
 
 - **Wardrobe with IDs:** every item gets a permanent ID (SH01 shirt, TS01 T-shirt or polo, PT01 pants or cargos,
   JN01 jeans, SHOE01 shoes, JK01 jacket or hoodie, AC01 accessory). IDs are never reused, even after you remove an item.
@@ -84,12 +84,39 @@ To build installers locally run `npm run dist`; the files appear in `dist/`.
 - **Profile:** optional skin depth and undertone nudge the colour advice. You choose them yourself, because Stylo
   does not analyse photos of your face.
 - **Backup:** download or restore a backup file, and download the wardrobe inventory as a CSV.
+  Backups never include your personal face and body photos.
 
-## Not included (needs a server)
+## AI previews on you (optional, needs the preview service)
 
-- AI-generated pictures of you wearing the outfits, and analysis of face or body photos. These need an image
-  model behind a small server so the API key stays private. The picture boards use your real item photos instead,
-  so colours and patterns are never altered.
+Each look gets a "Preview on me" button that creates a picture of you wearing it, using your face and
+full-body photos and the real photos of the outfit's items. Every preview sits next to the real item photos with a
+note that details may differ, so you can check it. If the service is off, paused or over its limit, the app keeps
+working and "Save as image" still gives an accurate picture board.
+
+The service is a small Cloudflare Worker in the `worker` folder. It keeps the API key secret, limits usage
+(3 previews per device per day, 10 per network address, and a daily cap for everyone), and stores no photos.
+
+### Turn it on
+1. **Google AI Studio:** create a Gemini API key and switch the project to a paid plan. Use a paid plan because Google
+   states that paid API content is not used to improve its products, which matters for face photos.
+   Set a budget alert in Google Cloud.
+2. **Install tools:** install Node.js, then run `npm install -g wrangler` and `wrangler login` (free Cloudflare account).
+3. **Create storage for the limits:** in the `worker` folder run `wrangler kv namespace create LIMITS` and paste the
+   `id` it prints into `wrangler.toml`.
+4. **Edit `wrangler.toml`:** set `ALLOWED_ORIGINS` to your web app address with no path, for example
+   `https://YOUR-USERNAME.github.io`. Choose `PER_DEVICE` and `DAILY_CAP` (your daily spending limit, counted in previews).
+5. **Add secrets:** run `wrangler secret put GEMINI_API_KEY` and paste the key, then `wrangler secret put IP_SALT` and
+   type any long random text.
+6. **Deploy:** run `wrangler deploy`. It prints an address like `https://stylo-preview.YOUR-NAME.workers.dev`.
+7. **Point the app at it:** put that address in `config.js` as `previewApi`, then push to GitHub.
+8. **Fill in `privacy.html`:** replace `YOUR-EMAIL@example.com` with your contact address, and have the page reviewed
+   for your country's rules before launch.
+9. Create a new release tag (for example `v0.3.0`) to rebuild the desktop apps.
+
+### Cost
+Google lists this model (`gemini-nano-banana-2.1`) at about $0.034 per generated 1K image, plus a small charge for the
+input photos and any thinking the model does. Prices change, so check the current Gemini API pricing page, and
+watch your first real previews in Google Cloud billing before raising `DAILY_CAP`.
 
 ## Known limits
 - "Use my location" may not work in the desktop app. Pick the weather from the list instead.

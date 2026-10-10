@@ -11,6 +11,7 @@ const state = {
   worn: [],
   profile: { id: 'profile', depth: '', undertone: '' },
   counters: { id: 'counters' },
+  me: { id: 'me', face: '', body: '', adult: false, consent: false },
   occasion: 'casual',
   temp: 20,
   rain: null,
@@ -161,6 +162,9 @@ function lookCard(look, opts = {}) {
   if (look.r.cautions.length) card.append(h('ul', { class: 'reasons bad' }, ...look.r.cautions.slice(0, 3).map((t) => h('li', {}, t))));
   if (look.alt) card.append(h('p', { class: 'alt' }, look.alt.text));
 
+  const slot = h('div', { class: 'preview-slot' });
+  card.append(slot);
+
   const row = h('div', { class: 'button-row' });
   if (opts.wear) {
     const wear = h('button', { class: 'btn primary', type: 'button' }, 'Wear this today');
@@ -176,11 +180,123 @@ function lookCard(look, opts = {}) {
     });
     row.append(wear);
   }
+  if (previewsOn()) {
+    const pb = h('button', { class: 'btn ghost', type: 'button' }, 'Preview on me');
+    pb.addEventListener('click', () => requestPreview(look, pb, slot));
+    row.append(pb);
+    showCachedPreview(look, slot);
+  }
   const save = h('button', { class: 'btn ghost', type: 'button' }, 'Save as image');
   save.addEventListener('click', () => saveBoard(look));
   row.append(save);
   card.append(row);
   return card;
+}
+
+/* ---------- AI previews (need the preview service set in config.js) ---------- */
+
+const PREVIEW_API = String((window.STYLO_CONFIG && window.STYLO_CONFIG.previewApi) || '').replace(/\/$/, '');
+function previewsOn() { return PREVIEW_API !== ''; }
+const previewKey = (look) => `preview:${look.id}:${look.items.map((i) => i.colour).join('')}`;
+
+async function getDeviceId() {
+  let d = await getOne('meta', 'device');
+  if (!d) { d = { id: 'device', value: newId() }; await put('meta', d); }
+  return d.value;
+}
+
+function renderMe() {
+  $('#me-card').hidden = !previewsOn();
+  if (!previewsOn()) return;
+  $('#me-adult').checked = !!state.me.adult;
+  $('#me-consent').checked = !!state.me.consent;
+  for (const kind of ['face', 'body']) {
+    const img = $(`#me-${kind}-img`);
+    if (state.me[kind]) { img.src = state.me[kind]; img.hidden = false; }
+    else { img.removeAttribute('src'); img.hidden = true; }
+  }
+}
+
+const saveMe = () => put('meta', state.me);
+
+async function onMePhoto(kind, file) {
+  try {
+    const img = await loadImage(file);
+    state.me[kind] = shrink(img, 768).toDataURL('image/jpeg', 0.85);
+    await saveMe();
+    renderMe();
+    toast('Photo saved on this device.');
+  } catch {
+    toast('That photo could not be read. Try another one.');
+  }
+}
+
+async function deleteMe() {
+  if (!confirm('Delete your face and body photos and all saved previews from this device?')) return;
+  state.me = { id: 'me', face: '', body: '', adult: false, consent: false };
+  await saveMe();
+  for (const m of await getAll('meta')) if (m.id.startsWith('preview:')) await remove('meta', m.id);
+  renderMe();
+  $$('.preview-slot').forEach((s) => s.replaceChildren());
+  toast('Your photos and previews were deleted from this device.');
+}
+
+function showPreview(slot, image, look) {
+  slot.replaceChildren(
+    h('figure', { class: 'preview' },
+      h('img', { src: image, alt: `AI preview of ${look.id}` }),
+      h('figcaption', {}, 'AI preview. Colours, patterns and fit may differ from your real clothes, so compare it with the photos above.'))
+  );
+  const save = h('button', { class: 'btn ghost small', type: 'button' }, 'Save preview');
+  save.addEventListener('click', async () => download(await (await fetch(image)).blob(), `Stylo-preview-${look.id.replace(/ \+ /g, '-')}.jpg`));
+  slot.append(save);
+}
+
+async function showCachedPreview(look, slot) {
+  try {
+    const cached = await getOne('meta', previewKey(look));
+    if (cached) showPreview(slot, cached.image, look);
+  } catch { /* no cached preview */ }
+}
+
+function previewError(status, j) {
+  if (status === 429) return "You have used today's previews. Try again tomorrow.";
+  if (status === 503) return 'Previews are paused for today. Save as image still works.';
+  if (status === 422) return 'The service could not make a preview for this look. Try another look.';
+  if (status === 400 || status === 403 || status === 413) return 'The preview request was rejected. Check your photos in Profile.';
+  return 'The preview service had a problem. Please try again later.';
+}
+
+async function requestPreview(look, btn, slot) {
+  if (!state.me.adult || !state.me.consent) { toast('Tick both confirmations in the Profile tab first.'); return; }
+  if (!state.me.face && !state.me.body) { toast('Add a face or full-body photo in the Profile tab first.'); return; }
+  btn.disabled = true;
+  btn.textContent = 'Creating preview...';
+  try {
+    const res = await fetch(PREVIEW_API + '/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        deviceId: await getDeviceId(),
+        consent: true,
+        adult: true,
+        person: [state.me.face, state.me.body].filter(Boolean),
+        garments: look.items.slice(0, 6).map((i) => i.photo),
+        labels: look.items.slice(0, 6).map((i) => `${i.code} ${itemLabel(i)}`),
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(previewError(res.status, j)); return; }
+    const image = `data:${j.mime || 'image/jpeg'};base64,${j.data}`;
+    await put('meta', { id: previewKey(look), image, made: Date.now() });
+    showPreview(slot, image, look);
+    toast(Number.isFinite(j.remaining) ? `Preview ready. ${j.remaining} left today.` : 'Preview ready.');
+  } catch {
+    toast('Could not reach the preview service. Check your connection.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Preview on me';
+  }
 }
 
 /* ---------- Today ---------- */
@@ -437,6 +553,7 @@ async function saveItem() {
 function renderProfile() {
   $('#p-depth').value = state.profile.depth || '';
   $('#p-undertone').value = state.profile.undertone || '';
+  renderMe();
 }
 
 async function saveProfile() {
@@ -664,6 +781,16 @@ function bind() {
 
   $('#p-depth').addEventListener('change', saveProfile);
   $('#p-undertone').addEventListener('change', saveProfile);
+  $('#me-adult').addEventListener('change', (e) => { state.me.adult = e.target.checked; saveMe(); });
+  $('#me-consent').addEventListener('change', (e) => { state.me.consent = e.target.checked; saveMe(); });
+  for (const kind of ['face', 'body']) {
+    $(`#me-${kind}`).addEventListener('change', (e) => {
+      const f = e.target.files[0];
+      if (f) onMePhoto(kind, f);
+      e.target.value = '';
+    });
+  }
+  $('#me-delete').addEventListener('click', deleteMe);
   $('#export').addEventListener('click', exportBackup);
   $('#csv').addEventListener('click', exportCsv);
   $('#import').addEventListener('click', () => $('#import-file').click());
@@ -682,6 +809,7 @@ async function init() {
     state.worn = await getAll('worn');
     state.profile = (await getOne('meta', 'profile')) || state.profile;
     state.counters = (await getOne('meta', 'counters')) || state.counters;
+    state.me = (await getOne('meta', 'me')) || state.me;
     await migrate();
   } catch {
     toast('Saving is not available in this browser mode. Try a normal tab.');
